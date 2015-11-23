@@ -17,6 +17,12 @@
        usingRoutingKey:(NSString *)theRoutingKey
                  error:(NSError * __autoreleasing *)error;
 
+- (void)publishMessage:(NSString *)body
+             messageID:(NSString *)messageID
+           messageType:(NSString *)messageType
+       usingRoutingKey:(NSString *)theRoutingKey
+                 error:(NSError * __autoreleasing *)error;
+
 - (void)publishMessage:(NSString *)messageType
              messageID:(NSString *)messageID
                payload:(NSString *)body

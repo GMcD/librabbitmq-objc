@@ -36,6 +36,31 @@
 	[self.channel.connection checkLastOperation:@"Failed to publish message" error:error];
 }
 
+- (void)publishMessage:(NSString *)body
+             messageID:(NSString *)messageID
+           messageType:(NSString *)messageType
+       usingRoutingKey:(NSString *)theRoutingKey
+                 error:(NSError * __autoreleasing *)error
+{
+    const amqp_basic_properties_t properties = (amqp_basic_properties_t){
+        ._flags = AMQP_BASIC_MESSAGE_ID_FLAG | AMQP_BASIC_DELIVERY_MODE_FLAG | AMQP_BASIC_CONTENT_TYPE_FLAG,
+        .message_id = amqp_cstring_bytes([messageID UTF8String]),
+        .delivery_mode = 2,
+        .content_type = amqp_cstring_bytes([messageType UTF8String]),
+    };
+  amqp_basic_publish(self.channel.connection.internalConnection,
+                       self.channel.internalChannel,
+                       self.internalExchange,
+                       amqp_cstring_bytes([theRoutingKey UTF8String]),
+                       NO,
+                       NO,
+                       &properties,
+                       amqp_cstring_bytes([body UTF8String]));
+  
+  [self.channel.connection checkLastOperation:@"Failed to publish message" error:error];
+}
+
+
 // TODO: we need to add support for appID -- we can use this for versioning
 - (void)publishMessage:(NSString *)messageType
              messageID:(NSString *)messageID
