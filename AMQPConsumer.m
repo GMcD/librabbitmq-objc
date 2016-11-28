@@ -84,7 +84,7 @@
 	int result = -1;
 	size_t receivedBytes = 0;
     size_t bodySize = -1;
-    size_t buf = 0;
+    void *buf = 0;
 	amqp_bytes_t body;
 	amqp_basic_deliver_t *delivery;
 	amqp_basic_properties_t *properties;
