@@ -7,6 +7,7 @@
 //
 
 #include <sys/uio.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 
 char * strerror$UNIX2003(int errnum)
@@ -30,7 +31,7 @@ int fcntl$UNIX2003(int fildes, int cmd, ...)
     va_start(args, cmd);
     int result = fcntl(fildes, cmd, args);
     va_end(args);
-    
+
     return result;
 }
 

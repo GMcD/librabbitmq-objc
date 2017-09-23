@@ -17,6 +17,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+#include <sys/time.h>
 #include <sys/ioctl.h>
 
 #import "amqp.h"
@@ -65,7 +66,7 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
 - (void)dealloc
 {
     [self _tearDown];
-    
+
 #if !OS_OBJECT_USE_OBJC
     dispatch_release(_callbackQueue);
 #endif
@@ -84,17 +85,17 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
         _type           = type;
         _topic          = topic;
         _delegate       = theDelegate;
-        
+
         _ttlManager = [[AMQPTTLManager alloc] init];
         _ttlManager.delegate = self;
-        
+
         _callbackQueue  = callbackQueue ? callbackQueue : dispatch_get_main_queue();
-        
+
 #if !OS_OBJECT_USE_OBJC
         dispatch_retain(_callbackQueue);
 #endif
     }
-    
+
     return self;
 }
 
@@ -118,7 +119,7 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
             self.started = NO;
             return;
         }
-        
+
         if ([self.delegate respondsToSelector:@selector(amqpConsumerThreadDidStart:)]) {
             dispatch_sync(_callbackQueue, ^{
                 [self.delegate amqpConsumerThreadDidStart:self];
@@ -126,7 +127,7 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
         }
 
         NSLog(@"<started: consumer_thread: (%p) topic: %@>", self, _topic);
-        
+
         while(![self isCancelled]) {
             @autoreleasepool {
                 AMQPMessage *message = [self _consume];
@@ -140,7 +141,7 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
                 }
             }
         }
-        
+
         NSLog(@"<stopping: consumer_thread: (%p) topic: %@>", self, _topic);
 
         [self _tearDown];
@@ -162,7 +163,7 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
 - (void)stop
 {
     [self cancel];
-    
+
     BOOL stopped = !self.started;
     while(!stopped) {
         stopped = !self.started;
@@ -191,9 +192,9 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
     if (![self _setupExchange:error])        goto HandleError;
     if (![self _setupConsumerQueue:error])   goto HandleError;
     if (![self _setupConsumer:error])        goto HandleError;
-    
+
     return YES;
-    
+
     HandleError:
     [self _tearDown];
     return NO;
@@ -326,7 +327,7 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
 	int     result = -1;
 	size_t  receivedBytes = 0;
 	size_t  bodySize = -1;
-    
+
     amqp_bytes_t            body;
     amqp_frame_t            frame;
 	amqp_basic_deliver_t    *delivery;
@@ -336,29 +337,29 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
     if (!connection) {
         return nil;
     }
-    
+
 	amqp_maybe_release_buffers(connection);
 
     AMQPMessage *message = nil;
-    
+
 	while(!message && ![self isCancelled]) {
         if (!amqp_frames_enqueued(connection) &&
             !amqp_data_in_buffer(connection)) {
             int sock = amqp_get_sockfd(connection);
             //                printf("socket: %d\n", sock);
-            
+
             fd_set read_flags;
             int ret = 0;
             do {
                 FD_ZERO(&read_flags);
                 FD_SET(sock, &read_flags);
-                
+
                 struct timeval timeout;
-                
+
                 /* Wait upto a half a second. */
                 timeout.tv_sec = 1;
                 timeout.tv_usec = 0;
-                
+
                 ret = select(sock+1, &read_flags, NULL, NULL, &timeout);
 
                 int bytesToRead = 0; ioctl(sock, FIONREAD, &bytesToRead);
@@ -370,7 +371,7 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
                 if (_checkConnectionTimerFired) {
                     _checkConnectionTimerFired = NO;
 //                    NSLog(@"<consumer_thread (%p) topic: %@ :: heartbeat>", self, _topic);
-                    
+
                     // If we're idle for a long long time,
                     // the outer autorelease pool on consume will never drain because we're stuck here
                     // (pdcgomes 29.04.2013)
@@ -379,19 +380,19 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
                     }
                     [_ttlManager addObject:kCheckConnectionToken ttl:kCheckConnectionInterval];
                 }
-                
+
                 BOOL hasErrorCondition = (ret == -1 || (ret == 1 && bytesToRead == 0));
                 if (hasErrorCondition) {
                     goto HandleFrameError;
                 }
             } while (ret == 0 && ![self isCancelled]);
-            
+
         }
 
         if ([self isCancelled]) {
             break;
         }
-        
+
 		// a complete message delivery consists of at least three frames:
         // Frame #1: method frame with method basic.deliver
 		// Frame #2: header frame containing body size
@@ -404,32 +405,32 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
             NSLog(@"frame #1 resut = %d", result);
             goto HandleFrameError;
         }
-		
+
 		if (frame.frame_type != AMQP_FRAME_METHOD ||
            frame.payload.method.id != AMQP_BASIC_DELIVER_METHOD) {
             continue;
         }
-		
+
 		delivery = (amqp_basic_deliver_t *)frame.payload.method.decoded;
-		
+
         // Frame #2: header frame containing body size
 		result = amqp_simple_wait_frame(connection, &frame);
 		if (result != AMQP_STATUS_OK) {
             NSLog(@"<consumer_thread (%p) topic %@ :: frame #2 error (%d)>", self, _topic, result);
             goto HandleFrameError;
         }
-		 
+
 		if (frame.frame_type != AMQP_FRAME_HEADER) {
             NSLog(@"frame.frame_type != AMQP_FRAME_HEADER");
 			return nil;
 		}
-		
+
 		properties = (amqp_basic_properties_t *)frame.payload.properties.decoded;
-		
+
 		bodySize = (size_t)frame.payload.properties.body_size;
 		receivedBytes = 0;
 		body = amqp_bytes_malloc(bodySize);
-		
+
         // Frame #3+: body frames
 		while(receivedBytes < bodySize) {
 			result = amqp_simple_wait_frame(connection, &frame);
@@ -437,22 +438,22 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
                 NSLog(@"<consumer_thread (%p) topic %@ :: frame #3 error (%d)>", self, _topic, result);
                 goto HandleFrameError;
             }
-			
+
 			if (frame.frame_type != AMQP_FRAME_BODY) {
                 NSLog(@"frame.frame_type != AMQP_FRAME_BODY");
 				return nil;
 			}
-			
+
 			receivedBytes += frame.payload.body_fragment.len;
 			memcpy(body.bytes, frame.payload.body_fragment.bytes, frame.payload.body_fragment.len);
 		}
-        
+
 		message = [AMQPMessage messageFromBody:body withDeliveryProperties:delivery withMessageProperties:properties receivedAt:[NSDate date]];
 		amqp_bytes_free(body);
 	}
-	
+
 	return message;
-    
+
     HandleFrameError:
     [self _handleConnectionError];
 
@@ -473,7 +474,7 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
     }
 
     _connectionErrorWasRaised = YES;
-    
+
     dispatch_async(_callbackQueue, ^{
         if ([self.delegate respondsToSelector:@selector(amqpConsumerThread:didReportError:)]) {
             NSString *errorDescription = nil;
@@ -500,19 +501,19 @@ static const NSUInteger kMaxReconnectionAttempts = 3;
 - (BOOL)_attemptToReconnect
 {
     BOOL success = NO;
-    
+
     _reconnectionCount = 0;
     while(_reconnectionCount < kMaxReconnectionAttempts) {
         if ([self isCancelled]) {
             break;
         };
-        
+
         _reconnectionCount++;
-        
+
         NSLog(@"<reconnect: consumer_thread: (%p) topic: %@ :: reconnection attempt #%d...>", self, _topic, (int)_reconnectionCount);
-        
+
         [self _tearDown];
-        
+
         NSError *error = nil;
         if ([self _setup:&error]) {
             NSLog(@"<reconnect: consumer_thread: (%p) topic: %@ :: reconnected successfully!>", self, _topic);
