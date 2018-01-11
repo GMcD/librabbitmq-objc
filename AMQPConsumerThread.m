@@ -17,6 +17,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+#include <sys/time.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
 
